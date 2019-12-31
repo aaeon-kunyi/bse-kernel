@@ -939,13 +939,17 @@ static int mlx5_ib_query_device(struct ib_device *ibdev,
 	}
 
 	if (MLX5_CAP_GEN(mdev, tag_matching)) {
-		props->tm_caps.max_rndv_hdr_size = MLX5_TM_MAX_RNDV_MSG_SIZE;
 		props->tm_caps.max_num_tags =
 			(1 << MLX5_CAP_GEN(mdev, log_tag_matching_list_sz)) - 1;
-		props->tm_caps.flags = IB_TM_CAP_RC;
 		props->tm_caps.max_ops =
 			1 << MLX5_CAP_GEN(mdev, log_max_qp_sz);
 		props->tm_caps.max_sge = MLX5_TM_MAX_SGE;
+	}
+
+	if (MLX5_CAP_GEN(mdev, tag_matching) &&
+	    MLX5_CAP_GEN(mdev, rndv_offload_rc)) {
+		props->tm_caps.flags = IB_TM_CAP_RNDV_RC;
+		props->tm_caps.max_rndv_hdr_size = MLX5_TM_MAX_RNDV_MSG_SIZE;
 	}
 
 	if (MLX5_CAP_GEN(dev->mdev, cq_moderation)) {
@@ -1818,6 +1822,14 @@ static struct ib_ucontext *mlx5_ib_alloc_ucontext(struct ib_device *ibdev,
 	context->cqe_version = resp.cqe_version;
 	context->lib_caps = req.lib_caps;
 	print_lib_caps(dev, context->lib_caps);
+
+	if (mlx5_lag_is_active(dev->mdev)) {
+		u8 port = mlx5_core_native_port_num(dev->mdev);
+
+		atomic_set(&context->tx_port_affinity,
+			   atomic_add_return(
+				   1, &dev->roce[port].tx_port_affinity));
+	}
 
 	return &context->ibucontext;
 
@@ -6366,6 +6378,7 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 			mlx5_ib_unbind_slave_port(mpi->ibdev, mpi);
 		list_del(&mpi->list);
 		mutex_unlock(&mlx5_ib_multiport_mutex);
+		kfree(mpi);
 		return;
 	}
 

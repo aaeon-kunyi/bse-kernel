@@ -110,8 +110,8 @@ static int rt6_fill_node(struct net *net, struct sk_buff *skb,
 			 int iif, int type, u32 portid, u32 seq,
 			 unsigned int flags);
 static struct rt6_info *rt6_find_cached_rt(struct fib6_info *rt,
-					   struct in6_addr *daddr,
-					   struct in6_addr *saddr);
+					   const struct in6_addr *daddr,
+					   const struct in6_addr *saddr);
 
 #ifdef CONFIG_IPV6_ROUTE_INFO
 static struct fib6_info *rt6_add_route_info(struct net *net,
@@ -521,6 +521,7 @@ static void rt6_probe(struct fib6_info *rt)
 {
 	struct __rt6_probe_work *work = NULL;
 	const struct in6_addr *nh_gw;
+	unsigned long last_probe;
 	struct neighbour *neigh;
 	struct net_device *dev;
 	struct inet6_dev *idev;
@@ -539,6 +540,7 @@ static void rt6_probe(struct fib6_info *rt)
 	nh_gw = &rt->fib6_nh.nh_gw;
 	dev = rt->fib6_nh.nh_dev;
 	rcu_read_lock_bh();
+	last_probe = READ_ONCE(rt->last_probe);
 	idev = __in6_dev_get(dev);
 	neigh = __ipv6_neigh_lookup_noref(dev, nh_gw);
 	if (neigh) {
@@ -554,13 +556,15 @@ static void rt6_probe(struct fib6_info *rt)
 				__neigh_set_probe_once(neigh);
 		}
 		write_unlock(&neigh->lock);
-	} else if (time_after(jiffies, rt->last_probe +
+	} else if (time_after(jiffies, last_probe +
 				       idev->cnf.rtr_probe_interval)) {
 		work = kmalloc(sizeof(*work), GFP_ATOMIC);
 	}
 
-	if (work) {
-		rt->last_probe = jiffies;
+	if (!work || cmpxchg(&rt->last_probe,
+			     last_probe, jiffies) != last_probe) {
+		kfree(work);
+	} else {
 		INIT_WORK(&work->work, rt6_probe_deferred);
 		work->target = *nh_gw;
 		dev_hold(dev);
@@ -1268,6 +1272,13 @@ static struct rt6_info *rt6_make_pcpu_route(struct net *net,
 	prev = cmpxchg(p, NULL, pcpu_rt);
 	BUG_ON(prev);
 
+	if (rt->fib6_destroying) {
+		struct fib6_info *from;
+
+		from = xchg((__force struct fib6_info **)&pcpu_rt->from, NULL);
+		fib6_info_release(from);
+	}
+
 	return pcpu_rt;
 }
 
@@ -1542,30 +1553,43 @@ out:
  * Caller has to hold rcu_read_lock()
  */
 static struct rt6_info *rt6_find_cached_rt(struct fib6_info *rt,
-					   struct in6_addr *daddr,
-					   struct in6_addr *saddr)
+					   const struct in6_addr *daddr,
+					   const struct in6_addr *saddr)
 {
+	const struct in6_addr *src_key = NULL;
 	struct rt6_exception_bucket *bucket;
-	struct in6_addr *src_key = NULL;
 	struct rt6_exception *rt6_ex;
 	struct rt6_info *res = NULL;
-
-	bucket = rcu_dereference(rt->rt6i_exception_bucket);
 
 #ifdef CONFIG_IPV6_SUBTREES
 	/* rt6i_src.plen != 0 indicates rt is in subtree
 	 * and exception table is indexed by a hash of
 	 * both rt6i_dst and rt6i_src.
-	 * Otherwise, the exception table is indexed by
-	 * a hash of only rt6i_dst.
+	 * However, the src addr used to create the hash
+	 * might not be exactly the passed in saddr which
+	 * is a /128 addr from the flow.
+	 * So we need to use f6i->fib6_src to redo lookup
+	 * if the passed in saddr does not find anything.
+	 * (See the logic in ip6_rt_cache_alloc() on how
+	 * rt->rt6i_src is updated.)
 	 */
 	if (rt->fib6_src.plen)
 		src_key = saddr;
+find_ex:
 #endif
+	bucket = rcu_dereference(rt->rt6i_exception_bucket);
 	rt6_ex = __rt6_find_exception_rcu(&bucket, daddr, src_key);
 
 	if (rt6_ex && !rt6_check_expired(rt6_ex->rt6i))
 		res = rt6_ex->rt6i;
+
+#ifdef CONFIG_IPV6_SUBTREES
+	/* Use fib6_src as src_key and redo lookup */
+	if (!res && src_key && src_key != &rt->fib6_src.addr) {
+		src_key = &rt->fib6_src.addr;
+		goto find_ex;
+	}
+#endif
 
 	return res;
 }
@@ -2194,7 +2218,7 @@ static struct dst_entry *rt6_check(struct rt6_info *rt,
 {
 	u32 rt_cookie = 0;
 
-	if ((from && !fib6_get_cookie_safe(from, &rt_cookie)) ||
+	if (!from || !fib6_get_cookie_safe(from, &rt_cookie) ||
 	    rt_cookie != cookie)
 		return NULL;
 
@@ -2460,6 +2484,12 @@ static struct rt6_info *__ip6_route_redirect(struct net *net,
 	struct fib6_info *rt;
 	struct fib6_node *fn;
 
+	/* l3mdev_update_flow overrides oif if the device is enslaved; in
+	 * this case we must match on the real ingress device, so reset it
+	 */
+	if (fl6->flowi6_flags & FLOWI_FLAG_SKIP_NH_OIF)
+		fl6->flowi6_oif = skb->dev->ifindex;
+
 	/* Get the "current" route for this destination and
 	 * check if the redirect has come from appropriate router.
 	 *
@@ -2650,10 +2680,8 @@ out:
 u32 ip6_mtu_from_fib6(struct fib6_info *f6i, struct in6_addr *daddr,
 		      struct in6_addr *saddr)
 {
-	struct rt6_exception_bucket *bucket;
-	struct rt6_exception *rt6_ex;
-	struct in6_addr *src_key;
 	struct inet6_dev *idev;
+	struct rt6_info *rt;
 	u32 mtu = 0;
 
 	if (unlikely(fib6_metric_locked(f6i, RTAX_MTU))) {
@@ -2662,18 +2690,10 @@ u32 ip6_mtu_from_fib6(struct fib6_info *f6i, struct in6_addr *daddr,
 			goto out;
 	}
 
-	src_key = NULL;
-#ifdef CONFIG_IPV6_SUBTREES
-	if (f6i->fib6_src.plen)
-		src_key = saddr;
-#endif
-
-	bucket = rcu_dereference(f6i->rt6i_exception_bucket);
-	rt6_ex = __rt6_find_exception_rcu(&bucket, daddr, src_key);
-	if (rt6_ex && !rt6_check_expired(rt6_ex->rt6i))
-		mtu = dst_metric_raw(&rt6_ex->rt6i->dst, RTAX_MTU);
-
-	if (likely(!mtu)) {
+	rt = rt6_find_cached_rt(f6i, daddr, saddr);
+	if (unlikely(rt)) {
+		mtu = dst_metric_raw(&rt->dst, RTAX_MTU);
+	} else {
 		struct net_device *dev = fib6_info_nh_dev(f6i);
 
 		mtu = IPV6_MIN_MTU;
@@ -3050,6 +3070,9 @@ static struct fib6_info *ip6_route_info_create(struct fib6_config *cfg,
 	if (!rt)
 		goto out;
 
+#ifdef CONFIG_IPV6_ROUTER_PREF
+	rt->last_probe = jiffies;
+#endif
 	if (cfg->fc_flags & RTF_ADDRCONF)
 		rt->dst_nocount = true;
 
@@ -3093,7 +3116,7 @@ static struct fib6_info *ip6_route_info_create(struct fib6_config *cfg,
 	rt->fib6_metric = cfg->fc_metric;
 	rt->fib6_nh.nh_weight = 1;
 
-	rt->fib6_type = cfg->fc_type;
+	rt->fib6_type = cfg->fc_type ? : RTN_UNICAST;
 
 	/* We cannot add true routes via loopback here,
 	   they would result in kernel looping; promote them to reject routes

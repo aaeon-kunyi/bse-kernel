@@ -406,6 +406,7 @@ static int fsl_lpspi_config(struct fsl_lpspi_data *fsl_lpspi)
 		temp = CFGR1_MASTER;
 	else
 		temp = CFGR1_PINCFG;
+
 	if (fsl_lpspi->config.mode & SPI_CS_HIGH)
 		temp |= CFGR1_PCSPOL;
 	writel(temp, fsl_lpspi->base + IMX7ULP_CFGR1);
