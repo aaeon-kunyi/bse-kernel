@@ -90,7 +90,7 @@
 		linux,cma {
 			compatible = "shared-dma-pool";
 			reusable;
-			size = <0 0x28000000>;
+			size = <0 0x8000000>;
 			alloc-ranges = <0 0x40000000 0 0x60000000>;
 			linux,cma-default;
 		};
@@ -1376,7 +1376,7 @@
 			 * function = LED_FUNCTION_STATUS;
 			 * color = <LED_COLOR_ID_RED>;
 			 */
-			default-state = "on";
+			default-state = "off";
 		};
 
 		led1: led_blue {
@@ -1388,10 +1388,10 @@
 			 * function = LED_FUNCTION_STATUS;
 			 * color = <LED_COLOR_ID_BLUE>;
 			 */
-			default-state = "on";
+			default-state = "off";
 		};
 
-		led2: led_green {
+		led2: led_yellow {
 			label = "led_yellow";
 			gpios = <&gpio1 14 GPIO_ACTIVE_HIGH>;
 			/*
@@ -1400,7 +1400,7 @@
 			 * function = LED_FUNCTION_STATUS;
 			 * color = <LED_COLOR_ID_YELLOW>;
 			 */
-			default-state = "on";
+			default-state = "off";
 		};
 	};
 
@@ -1515,7 +1515,7 @@
 		pinctrl_pcie0: pcie0grp {
 			fsl,pins = <
 				MX8MM_IOMUXC_I2C4_SCL_PCIE1_CLKREQ_B	0x61 /* open drain, pull up */
-				MX8MM_IOMUXC_GPIO1_IO05_GPIO1_IO5	0x41
+				/* MX8MM_IOMUXC_GPIO1_IO05_GPIO1_IO5	0x41 */
 				MX8MM_IOMUXC_SAI2_RXFS_GPIO4_IO21	0x41
 			>;
 		};
@@ -1784,7 +1784,7 @@
 		pinctrl_usb_vbusctrls: usb1_vbus_grp {
 			fsl,pins = <
 				MX8MM_IOMUXC_GPIO1_IO03_GPIO1_IO3			0x09
-				MX8MM_IOMUXC_GPIO1_IO04_GPIO1_IO4			0x09
+				/* MX8MM_IOMUXC_GPIO1_IO04_GPIO1_IO4			0x09 */
 				MX8MM_IOMUXC_GPIO1_IO05_GPIO1_IO5			0x09
 				MX8MM_IOMUXC_GPIO1_IO06_GPIO1_IO6			0x09
 				MX8MM_IOMUXC_GPIO1_IO07_GPIO1_IO7			0x09
