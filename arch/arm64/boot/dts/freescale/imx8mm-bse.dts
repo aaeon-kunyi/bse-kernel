@@ -1522,7 +1522,7 @@
 
 		pinctrl_pmic: pmicirq {
 			fsl,pins = <
-				MX8MM_IOMUXC_GPIO1_IO03_GPIO1_IO3		0x41
+				MX8MM_IOMUXC_GPIO1_IO00_GPIO1_IO0		0x41
 			>;
 		};
 
@@ -1850,7 +1850,7 @@
 		compatible = "rohm,bd71847";
 		pinctrl-0 = <&pinctrl_pmic>;
 		interrupt-parent = <&gpio1>;
-		interrupts = <3 GPIO_ACTIVE_LOW>;
+		interrupts = <0 GPIO_ACTIVE_LOW>;
 		rohm,reset-snvs-powered;
 
 		regulators {
