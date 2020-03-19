@@ -1006,8 +1006,10 @@
 		clocks = <&clk IMX8MM_CLK_ECSPI2_ROOT>,
 			<&clk IMX8MM_CLK_ECSPI2_ROOT>;
 		clock-names = "ipg", "per";
+		/*
 		dmas = <&sdma1 2 7 1>, <&sdma1 3 7 2>;
 		dma-names = "rx", "tx";
+		*/
 		status = "disabled";
 	};
 
@@ -1801,6 +1803,14 @@
 			>;
 		};
 
+		pinctrl_ecspi2: ecspi2grp {
+			fsl,pins = <
+				MX8MM_IOMUXC_ECSPI2_SCLK_ECSPI2_SCLK        0x00001916
+				MX8MM_IOMUXC_ECSPI2_MOSI_ECSPI2_MOSI        0x00000116
+				MX8MM_IOMUXC_ECSPI2_MISO_ECSPI2_MISO        0x00000116
+				MX8MM_IOMUXC_ECSPI2_SS0_GPIO5_IO13          0x00000116
+			>;
+		};
 	};
 };
 
@@ -2141,5 +2151,19 @@
 &modem_reset {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_modem_reset>;
+};
 
+&ecspi2 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_ecspi2>;
+	/* cs-gpios */
+	fsl,spi-num-chipselects = <1>;
+	cs-gpios = <&gpio5 13 GPIO_ACTIVE_LOW>;
+
+	tpm2:npct750@0 {
+		compatible = "tcg,tpm_tis-spi";
+		spi-max-frequency = <1000000>;
+		reg = <0>;
+	};
 };
