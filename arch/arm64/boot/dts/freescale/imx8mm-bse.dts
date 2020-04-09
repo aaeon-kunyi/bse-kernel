@@ -1449,7 +1449,8 @@
 
 &iomuxc {
 	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usb_vbusctrls>;
+	pinctrl-0 = <&pinctrl_usb_vbusctrls 
+				 &pinctrl_sw_reset>;
 
 	imx8mm-bse {
 
@@ -1794,6 +1795,12 @@
 				MX8MM_IOMUXC_GPIO1_IO06_GPIO1_IO6			0x09
 				MX8MM_IOMUXC_GPIO1_IO07_GPIO1_IO7			0x09
 				MX8MM_IOMUXC_GPIO1_IO08_GPIO1_IO8			0x09
+			>;
+		};
+
+		pinctrl_sw_reset: sw_reset_grp {
+			fsl,pins = <
+				MX8MM_IOMUXC_GPIO1_IO02_GPIO1_IO2			0x09
 			>;
 		};
 
