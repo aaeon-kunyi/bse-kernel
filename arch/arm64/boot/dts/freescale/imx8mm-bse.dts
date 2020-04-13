@@ -1404,14 +1404,6 @@
 		};
 	};
 
-	modem_reset: modem-reset {
-		compatible = "gpio-reset";
-		reset-gpios = <&gpio4 0 GPIO_ACTIVE_LOW>;
-		reset-delay-us = <2000>;
-		reset-post-delay-ms = <40>;
-		#reset-cells = <0>;
-	};
-
 	regulators {
 		compatible = "simple-bus";
 		#address-cells = <1>;
@@ -1436,7 +1428,8 @@
 
 &iomuxc {
 	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usb_vbusctrls>;
+	pinctrl-0 = <&pinctrl_usb_vbusctrls
+				 &pinctrl_modem_reset>;
 
 	imx8mm-bse {
 
@@ -2030,7 +2023,6 @@
 	assigned-clocks = <&clk IMX8MM_CLK_UART1>;
 	assigned-clock-parents = <&clk IMX8MM_SYS_PLL1_80M>;
 	fsl,uart-has-rtscts;
-	resets = <&modem_reset>;
 	status = "disabled";
 };
 
@@ -2133,11 +2125,6 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_led_green>;
 	status = "okay";
-};
-
-&modem_reset {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_modem_reset>;
 };
 
 &ecspi2 {
