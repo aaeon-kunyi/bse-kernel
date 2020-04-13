@@ -1417,17 +1417,6 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		reg_sd1_vmmc: sd1_regulator {
-			compatible = "regulator-fixed";
-			regulator-name = "SD1_EN";
-			regulator-min-microvolt = <3300000>;
-			regulator-max-microvolt = <3300000>;
-			gpio = <&gpio2 10 GPIO_ACTIVE_HIGH>;
-			off-on-delay = <20000>;
-			startup-delay-us = <100>;
-			enable-active-high;
-		};
-
 		reg_usdhc2_vmmc: regulator-usdhc2 {
 			compatible = "regulator-fixed";
 			regulator-name = "VSD_3V3";
