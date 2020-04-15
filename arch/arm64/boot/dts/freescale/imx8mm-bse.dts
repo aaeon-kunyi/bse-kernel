@@ -399,7 +399,7 @@
 			thermal-sensors = <&tmu>;
 			trips {
 				cpu_alert0: trip0 {
-					temperature = <92000>;
+					temperature = <90000>;
 					hysteresis = <2000>;
 					type = "passive";
 				};
@@ -2084,19 +2084,19 @@
 };
 
 &gpu {
-	status = "okay";
+	status = "disabled";
 };
 
 &vpu_g1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &vpu_g2 {
-	status = "okay";
+	status = "disabled";
 };
 
 &vpu_h1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &usbotg1 {
