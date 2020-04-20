@@ -35,6 +35,8 @@
 #define BM_OCOTP_CTRL_ADDR_MX7D		0x0000000F
 #define BP_OCOTP_CTRL_ADDR_MX7ULP	0
 #define BM_OCOTP_CTRL_ADDR_MX7ULP	0x000000FF
+#define BP_OCOTP_CTRL_ADDR_MX8MM	0
+#define BM_OCOTP_CTRL_ADDR_MX8MM	0x000000FF
 
 #define HW_OCOTP_TIMING			0x00000010
 #define BP_OCOTP_TIMING_STROBE_READ	16
@@ -50,6 +52,11 @@
 #define BP_TIMING_PROG			0
 #define BM_TIMING_PROG			0x00000FFF
 #define BV_TIMING_PROG_US		10
+
+/* from imx-ocotp.c */
+#define TIMING_STROBE_PROG_US		10	/* Min time to blow a fuse */
+#define TIMING_STROBE_READ_NS		37	/* Min time before read */
+#define TIMING_RELAX_NS			17
 
 #define HW_OCOTP_DATA			0x00000020
 
@@ -206,6 +213,24 @@ static const char *imx7ulp_otp_desc[][8] = {
 	BANK8(CRC0, CRC1, CRC2, CRC3, CRC4, CRC5, CRC6, CRC7),
 };
 
+static const char *imx8mm_otp_desc[][4] = {
+	BANK4(LOCK, TESTER0, TESTER1, TESTER2),
+	BANK4(TESTER3, TESTER4, TESTER5, BOOT_CFG0),
+	BANK4(BOOT_CFG1, BOOT_CFG2, BOOT_CFG3, BOOT_CFG4),
+	BANK4(MEM_TRIM0, MEM_TRIM1, ANA0, ANA1),
+	BANK4(RESERVED4_0, RESERVED4_1, RESERVED4_2, RESERVED4_3),
+	BANK4(RESERVED5_0, RESERVED5_1, RESERVED5_2, RESERVED5_3),
+	BANK4(SRK0, SRK1, SRK2, SRK3),
+	BANK4(SRK4, SRK5, SRK6, SRK7),
+	BANK4(SJC_RESP0, SJC_RESP1, USB_ID, FIELD_RETURN),
+	BANK4(MAC_ADDR0, MAC_ADDR1, MAC_ADDR2, SRK_REVOKE),
+	BANK4(MAU_KEY0, MAU_KEY1, MAU_KEY2, MAU_KEY3),
+	BANK4(MAU_KEY4, MAU_KEY5, MAU_KEY6, MAU_KEY7),
+	BANK4(RESERVED12_0, RESERVED12_1, RESERVED12_2, RESERVED12_3),
+	BANK4(RESERVED13_0, RESERVED13_1, RESERVED13_2, RESERVED13_3),
+	BANK4(GP10, GP11, GP20, GP21),
+};
+
 static DEFINE_MUTEX(otp_mutex);
 static void __iomem *otp_base;
 static struct clk *otp_clk;
@@ -223,6 +248,7 @@ enum fsl_otp_devtype {
 	FSL_OTP_MX6ULL,
 	FSL_OTP_MX7D,
 	FSL_OTP_MX7ULP,
+	FSL_OTP_MX8MM,
 };
 
 struct fsl_otp_devtype_data {
@@ -266,7 +292,8 @@ static u32 fsl_otp_bank_physical(struct fsl_otp_devtype_data *d, int bank)
 	u32 phy_bank;
 
 	if ((bank == 0) || (d->devtype == FSL_OTP_MX6SL) ||
-	    (d->devtype == FSL_OTP_MX7D) || (d->devtype == FSL_OTP_MX7ULP))
+	    (d->devtype == FSL_OTP_MX7D) || (d->devtype == FSL_OTP_MX7ULP) ||
+	    (d->devtype == FSL_OTP_MX8MM))
 		phy_bank = bank;
 	else if ((d->devtype == FSL_OTP_MX6UL) ||
 		 (d->devtype == FSL_OTP_MX6ULL) ||
@@ -293,7 +320,7 @@ static u32 fsl_otp_word_physical(struct fsl_otp_devtype_data *d, int index)
 	u32 word_off, bank_off;
 	u32 words_per_bank;
 
-	if (d->devtype == FSL_OTP_MX7D)
+	if ((d->devtype == FSL_OTP_MX7D) || (d->devtype == FSL_OTP_MX8MM))
 		words_per_bank = 4;
 	else
 		words_per_bank = 8;
@@ -349,6 +376,31 @@ static void imx7ulp_set_otp_timing(void)
 	/* No need to setup timing for ULP */
 }
 
+static void imx8mm_set_otp_timing(void)
+{
+	unsigned long clk_rate = 0;
+	unsigned long strobe_read, relax, strobe_prog;
+	u32 timing = 0;
+
+	clk_rate = clk_get_rate(otp_clk);
+
+	/* do optimization for too many zeros */
+	relax = DIV_ROUND_UP(clk_rate * TIMING_RELAX_NS, 1000000000) - 1;
+	strobe_read = DIV_ROUND_UP(clk_rate * TIMING_STROBE_READ_NS,
+				   1000000000);
+	strobe_read += 2 * (relax + 1) - 1;
+	strobe_prog = DIV_ROUND_CLOSEST(clk_rate * TIMING_STROBE_PROG_US,
+					1000000);
+	strobe_prog += 2 * (relax + 1) - 1;
+
+	timing = __raw_readl(otp_base + HW_OCOTP_TIMING) & 0x0FC00000;
+	timing |= strobe_prog & 0x00000FFF;
+	timing |= (relax       << 12) & 0x0000F000;
+	timing |= (strobe_read << 16) & 0x003F0000;
+
+	__raw_writel(timing, otp_base + HW_OCOTP_TIMING);
+}
+
 static struct fsl_otp_devtype_data imx6q_data = {
 	.devtype = FSL_OTP_MX6Q,
 	.bank_desc = (const char **)imx6q_otp_desc,
@@ -398,6 +450,13 @@ static struct fsl_otp_devtype_data imx7ulp_data = {
 	.bank_desc = (const char **)imx7ulp_otp_desc,
 	.fuse_nums = 31 * 8,
 	.set_otp_timing = imx7ulp_set_otp_timing,
+};
+
+static struct fsl_otp_devtype_data imx8mm_data = {
+	.devtype = FSL_OTP_MX8MM,
+	.bank_desc = (const char **)imx8mm_otp_desc,
+	.fuse_nums = 15 * 4,
+	.set_otp_timing = imx8mm_set_otp_timing,
 };
 
 static int otp_wait_busy(u32 flags)
@@ -549,6 +608,26 @@ static int imx7_otp_write_bits(int addr, u32 data, u32 magic)
 
 }
 
+static int imx8mm_otp_write_bits(int addr, u32 data, u32 magic)
+{
+	u32 c; /* for control register */
+
+	/* init the control register */
+	c = __raw_readl(otp_base + HW_OCOTP_CTRL);
+	c &= ~BM_OCOTP_CTRL_ADDR_MX8MM;
+	c |= BF(addr, OCOTP_CTRL_ADDR);
+	c |= BF(magic, OCOTP_CTRL_WR_UNLOCK);
+	__raw_writel(c, otp_base + HW_OCOTP_CTRL);
+
+	/* init the data register */
+	__raw_writel(data, otp_base + HW_OCOTP_DATA);
+	otp_wait_busy(0);
+
+	mdelay(2); /* Write Postamble */
+
+	return 0;
+}
+
 static ssize_t fsl_otp_store(struct kobject *kobj, struct kobj_attribute *attr,
 			     const char *buf, size_t count)
 {
@@ -603,6 +682,8 @@ static ssize_t fsl_otp_store(struct kobject *kobj, struct kobj_attribute *attr,
 		imx7_otp_write_bits(index, value, 0x3e77);
 	else if (fsl_otp->devtype == FSL_OTP_MX7ULP)
 		imx7ulp_otp_write_bits(index, value, 0x3e77);
+	else if (fsl_otp->devtype == FSL_OTP_MX8MM)
+		imx8mm_otp_write_bits(index, value, 0x3e77);
 	else
 		imx6_otp_write_bits(index, value, 0x3e77);
 
@@ -638,6 +719,7 @@ static const struct of_device_id fsl_otp_dt_ids[] = {
 	{ .compatible = "fsl,imx6ull-ocotp", .data = (void *)&imx6ull_data, },
 	{ .compatible = "fsl,imx7d-ocotp", .data = (void *)&imx7d_data, },
 	{ .compatible = "fsl,imx7ulp-ocotp", .data = (void *)&imx7ulp_data, },
+	{ .compatible = "fsl,imx8mm-ocotp", .data = (void *)&imx8mm_data, },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, fsl_otp_dt_ids);
