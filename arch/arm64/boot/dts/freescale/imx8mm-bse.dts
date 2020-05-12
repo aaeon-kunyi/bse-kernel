@@ -1930,7 +1930,7 @@
 			ldo2_reg: regulator@7 {
 				reg = <7>;
 				regulator-compatible = "LDO2";
-				regulator-min-microvolt = <900000>;
+				regulator-min-microvolt = <800000>;
 				regulator-max-microvolt = <900000>;
 				regulator-boot-on;
 				regulator-always-on;
@@ -2150,3 +2150,4 @@
 		reg = <0>;
 	};
 };
+
