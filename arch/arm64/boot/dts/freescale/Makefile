@@ -153,6 +153,8 @@ dtb-$(CONFIG_ARCH_FSL_IMX8MN) += fsl-imx8mn-ddr4-evk.dtb \
 				 fsl-imx8mn-ddr4-evk-root.dtb \
 				 fsl-imx8mn-ddr4-evk-inmate.dtb
 
+dtb-$(CONFIG_ARCH_FSL_IMX8MM) += imx8mm-bse.dtb
+
 always		:= $(dtb-y)
 subdir-y	:= $(dts-dirs)
 clean-files	:= *.dtb
